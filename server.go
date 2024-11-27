@@ -18,7 +18,7 @@ func startEchoServer(listeningAddress string) error {
 		fmt.Fprintf(os.Stdout, "Hello, %v, http: %v\n", r.URL.Path, r.TLS == nil)
 		defer r.Body.Close()
 
-		b := make([]byte, 2)
+		b := make([]byte, 1024)
 
 		n, err := r.Body.Read(b)
 
