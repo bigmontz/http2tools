@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -17,17 +18,21 @@ import (
 func connectionUsingRandomClient(address string, numberOfBytes int, batchSize int, timeBetweenBatches int) error {
 	fmt.Fprintf(os.Stdout, "%d bytes will be send to %s \n", numberOfBytes, address)
 
+	transport := &http2.Transport{
+		// So http2.Transport doesn't complain the URL scheme isn't 'https'
+		AllowHTTP:       true,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	if strings.HasPrefix(address, "http:") {
+		transport.DialTLSContext = func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, addr)
+		}
+	}
+
 	client := http.Client{
-		Transport: &http2.Transport{
-			// So http2.Transport doesn't complain the URL scheme isn't 'https'
-			AllowHTTP: true,
-			// Pretend we are dialing a TLS endpoint.
-			// Note, we ignore the passed tls.Config
-			DialTLSContext: func(ctx context.Context, n, a string, _ *tls.Config) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, n, a)
-			},
-		},
+		Transport: transport,
 	}
 
 	r, w := io.Pipe()
