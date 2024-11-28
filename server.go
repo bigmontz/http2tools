@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 
@@ -11,9 +12,7 @@ import (
 )
 
 func startEchoServer(listeningAddress string) error {
-	http2server := &http2.Server{}
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		fmt.Fprintf(os.Stdout, "Hello, %v, http: %v\n", r.URL.Path, r.TLS == nil)
 		defer r.Body.Close()
@@ -36,10 +35,50 @@ func startEchoServer(listeningAddress string) error {
 			fmt.Fprintf(os.Stderr, "Oops. An error while reading stream '%s'\n", err)
 		}
 	})
+	return startServer(listeningAddress, handlerFunc)
+}
+
+func startTcpProxyServer(listeningAddress string, targetAddress string, useTls bool) error {
+	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(os.Stdout, "Hello, %v, http: %v\n", r.URL.Path, r.TLS == nil)
+		defer r.Body.Close()
+
+		conn, err := net.Dial("tcp", targetAddress)
+		if err != nil {
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "%s", err)
+			fmt.Println("Error:", err)
+			return
+		}
+		defer conn.Close()
+
+		b := make([]byte, 1024)
+
+		n, err := r.Body.Read(b)
+
+		for ; err == nil; n, err = r.Body.Read(b) {
+			if n == 0 {
+				continue
+			}
+
+			if !writeResponse(w, b, n) {
+				return
+			}
+		}
+
+		if err != io.EOF {
+			fmt.Fprintf(os.Stderr, "Oops. An error while reading stream '%s'\n", err)
+		}
+	})
+	return startServer(listeningAddress, handlerFunc)
+}
+
+func startServer(listeningAddress string, handlerFunc http.HandlerFunc) error {
+	http2server := &http2.Server{}
 
 	httpServer := &http.Server{
 		Addr:    listeningAddress,
-		Handler: h2c.NewHandler(handler, http2server),
+		Handler: h2c.NewHandler(handlerFunc, http2server),
 	}
 
 	if err := http2.ConfigureServer(httpServer, http2server); err != nil {
@@ -49,6 +88,51 @@ func startEchoServer(listeningAddress string) error {
 	fmt.Fprintf(os.Stdout, "Server starting to listening at %s\n", listeningAddress)
 
 	return httpServer.ListenAndServe()
+}
+
+func startTcpEchoServer(listeningAddress string) error {
+	listener, err := net.Listen("tcp", listeningAddress)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	fmt.Fprintln(os.Stdout, "Server is listening at", listeningAddress)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			continue
+		}
+
+		go echoHandlerTcp(conn)
+	}
+}
+
+func echoHandlerTcp(conn net.Conn) {
+	defer conn.Close()
+
+	buffer := make([]byte, 1024)
+
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Println("Error:", err)
+			}
+			return
+		}
+
+		_, err = conn.Write(buffer[:n])
+		if err != nil {
+			if err != io.EOF {
+				fmt.Println("Error:", err)
+			}
+			return
+		}
+	}
+
 }
 
 func writeResponse(w http.ResponseWriter, b []byte, n int) bool {

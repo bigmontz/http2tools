@@ -17,14 +17,31 @@ var serverCmd = &cobra.Command{
 }
 
 var listeningAddress string = "0.0.0.0:1010"
+var useTcp bool = false
 
 var serverEchoCmd = &cobra.Command{
 	Use:     "echo",
 	Aliases: []string{"e"},
-	Short:   "Generate and echo server on the given ip address:port.",
+	Short:   "Generate an echo server on the given ip address:port.",
 	Args:    cobra.MaximumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if useTcp {
+			return startTcpEchoServer(listeningAddress)
+		}
 		return startEchoServer(listeningAddress)
+	},
+}
+
+var targetAddress string = "localhost:1011"
+var useTls bool = false
+
+var serverProxyCmd = &cobra.Command{
+	Use:     "proxy",
+	Aliases: []string{"p"},
+	Short:   "Generate an proxy server on the given ip address:port.",
+	Args:    cobra.MaximumNArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return startTcpProxyServer(listeningAddress, targetAddress, useTls)
 	},
 }
 
@@ -51,7 +68,12 @@ var clientRandomCmd = &cobra.Command{
 
 func init() {
 	serverEchoCmd.Flags().StringVarP(&listeningAddress, "listen", "l", listeningAddress, "The address which the server will listen")
+	serverEchoCmd.Flags().BoolVarP(&useTcp, "tcp", "t", useTcp, "If server should use TCP instead instead HTTP/2.0")
 	serverCmd.AddCommand(serverEchoCmd)
+	serverProxyCmd.Flags().StringVarP(&listeningAddress, "listen", "l", listeningAddress, "The address which the server will listen")
+	serverProxyCmd.Flags().StringVarP(&targetAddress, "target", "t", targetAddress, "The address which the server will connect to")
+	serverProxyCmd.Flags().BoolVarP(&useTls, "tls", "s", useTls, "If the proxy should connect use tls to the target address")
+	serverCmd.AddCommand(serverProxyCmd)
 	rootCmd.AddCommand(serverCmd)
 
 	clientRandomCmd.Flags().IntVarP(&numberOfBytesToSend, "bytes", "b", numberOfBytesToSend, "The number of bytes to be send (-1 to inf)")
