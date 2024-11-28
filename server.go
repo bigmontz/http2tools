@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -43,7 +44,8 @@ func startTcpProxyServer(listeningAddress string, targetAddress string, useTls b
 		fmt.Fprintf(os.Stdout, "Hello, %v, http: %v\n", r.URL.Path, r.TLS == nil)
 		defer r.Body.Close()
 
-		conn, err := net.Dial("tcp", targetAddress)
+		conn, err := dial(targetAddress, useTcp)
+
 		if err != nil {
 			w.WriteHeader(500)
 			fmt.Fprintf(w, "%s", err)
@@ -71,6 +73,14 @@ func startTcpProxyServer(listeningAddress string, targetAddress string, useTls b
 		}
 	})
 	return startServer(listeningAddress, handlerFunc)
+}
+
+func dial(targetAddress string, useTls bool) (net.Conn, error) {
+	if useTls {
+		return tls.Dial("tcp", targetAddress, &tls.Config{InsecureSkipVerify: true})
+	}
+
+	return net.Dial("tcp", targetAddress)
 }
 
 func startServer(listeningAddress string, handlerFunc http.HandlerFunc) error {
