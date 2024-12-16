@@ -42,9 +42,10 @@ func startEchoServer(listeningAddress string) error {
 func startTcpProxyServer(listeningAddress string, targetAddress string, useTls bool) error {
 	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(os.Stdout, "Hello, %v, http: %v\n", r.URL.Path, r.TLS == nil)
+		w.WriteHeader(200)
 		defer r.Body.Close()
 
-		conn, err := dial(targetAddress, useTcp)
+		conn, err := dial(targetAddress, useTls)
 
 		if err != nil {
 			w.WriteHeader(500)
@@ -54,16 +55,36 @@ func startTcpProxyServer(listeningAddress string, targetAddress string, useTls b
 		}
 		defer conn.Close()
 
+		go func() {
+			b2 := make([]byte, 1024)
+			n2, err2 := conn.Read(b2)
+
+			for ; err2 == nil; n2, err2 = conn.Read(b2) {
+				if n2 == 0 {
+					continue
+				}
+				if !writeResponse(w, b2, n2) {
+					return
+				}
+			}
+		}()
+
 		b := make([]byte, 1024)
+
+		fmt.Println("reading")
 
 		n, err := r.Body.Read(b)
 
 		for ; err == nil; n, err = r.Body.Read(b) {
+			fmt.Fprintf(os.Stdout, "Bytes received %d \n", n)
 			if n == 0 {
 				continue
 			}
 
-			if !writeResponse(w, b, n) {
+			fmt.Fprintf(os.Stdout, "Bytes received %d \n", n)
+
+			if _, err = conn.Write(b[:n]); err != nil {
+				fmt.Fprintf(os.Stderr, "Oops. An error while writing to tcp server '%s'\n", err)
 				return
 			}
 		}
