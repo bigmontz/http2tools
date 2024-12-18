@@ -45,6 +45,10 @@ func startTcpProxyServer(listeningAddress string, targetAddress string, useTls b
 		w.WriteHeader(200)
 		defer r.Body.Close()
 
+		if r.URL.Path == "/healthcheck" {
+			return
+		}
+
 		conn, err := dial(targetAddress, useTls)
 
 		if err != nil {
